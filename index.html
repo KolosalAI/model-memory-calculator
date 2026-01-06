@@ -572,7 +572,7 @@
       const sel = ctxEl.value;
       if (sel === '__custom') {
         const v = parseInt(ctxCustomEl.value, 10);
-        if (!Number.isFinite(v) || v <= 0) return 1; // minimal safe fallback
+        if (!Number.isFinite(v) || v < 1) return 1; // minimal safe fallback
         return v;
       }
       return Math.max(1, parseInt(sel || '4096', 10));
@@ -592,7 +592,7 @@
     ctxCustomEl.addEventListener('blur', () => {
       if (!ctxCustomEl.value) return;
       const v = parseInt(ctxCustomEl.value, 10);
-      if (!Number.isFinite(v) || v <= 0) ctxCustomEl.value = '';
+      if (!Number.isFinite(v) || v < 1) ctxCustomEl.value = '';
     });
 
     async function handleUrl() {
