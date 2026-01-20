@@ -11,13 +11,29 @@ This document describes the mathematical foundation for calculating the total me
 The total memory required for inference is given by:
 
 $$
-M_{\text{total}} = M_{\text{model}} + M_{\text{KV}}
+M_{\text{total}} = M_{\text{model}} + M_{\text{KV}} + M_{\text{overhead}}
 $$
 
 where:
 - $M_{\text{total}}$ = Total memory requirement (in bytes)
 - $M_{\text{model}}$ = Memory occupied by model weights (in bytes)
 - $M_{\text{KV}}$ = Memory occupied by Key-Value cache (in bytes)
+- $M_{\text{overhead}}$ = Runtime overhead for inference engine buffers (in bytes)
+
+**Important (MoE Architectures):** For Mixture-of-Experts models (e.g., Mixtral), all memory calculations use the *total* parameter count, not the active parameter count. While computational cost scales with active parameters, memory footprint requires all expert weights to remain resident.
+
+### Runtime Overhead ($M_{\text{overhead}}$)
+
+The overhead component models memory required for inference engine context, scratch buffers, and temporary activation tensors:
+
+$$
+M_{\text{overhead}} = \alpha \cdot P + \beta
+$$
+
+where:
+- $P$ = Total model parameter count (in billions)
+- $\alpha \approx 0.02$ GB/B (per-parameter overhead)
+- $\beta \approx 0.15$ GB (fixed engine overhead)
 
 ---
 
@@ -49,6 +65,8 @@ The KV cache stores intermediate key and value tensors for each attention layer 
 
 ### Formula
 
+The generalized formula using per-head dimensions is:
+
 $$
 M_{\text{KV}} = 2 \times n_{\text{layers}} \times n_{\text{heads}}^{\text{KV}} \times d_{\text{head}} \times C \times b_{\text{KV}}
 $$
@@ -56,14 +74,14 @@ $$
 where:
 - $n_{\text{layers}}$ = Number of transformer layers (from GGUF metadata: `*.block_count`)
 - $n_{\text{heads}}^{\text{KV}}$ = Number of key-value attention heads (from GGUF metadata: `*.attention.head_count_kv`)
-- $d_{\text{head}}$ = Dimension per attention head
+- $d_{\text{head}}$ = Dimension per attention head = $d_{\text{model}} / n_{\text{heads}}$
 - $C$ = Context size in tokens (user-specified)
 - $b_{\text{KV}}$ = Bytes per value for KV cache quantization (user-specified)
 - Factor of 2 accounts for both **Key** and **Value** tensors
 
 ### Simplification Using Hidden Size
 
-In practice, the calculation can be simplified using the **hidden size** ($d_{\text{model}}$):
+Using the relationship $d_{\text{head}} = d_{\text{model}} / n_{\text{heads}}$, this can be equivalently written as:
 
 $$
 d_{\text{model}} = n_{\text{heads}} \times d_{\text{head}}
@@ -88,7 +106,7 @@ $$
 Since $d_{\text{model}}$ (stored as `*.embedding_length` in GGUF metadata) is directly available, the implementation uses:
 
 $$
-M_{\text{KV}} = 2 \times b_{\text{KV}} \times d_{\text{model}} \times n_{\text{layers}} \times C
+M_{\text{KV}} = b_{\text{KV}} \times d_{\text{model}} \times n_{\text{layers}} \times C
 $$
 
 **Note:** This assumes the ratio $\frac{n_{\text{heads}}^{\text{KV}}}{n_{\text{heads}}} = 1$ for standard Multi-Head Attention. For GQA/MQA models, this ratio should be explicitly accounted for if the hidden size reflects query heads only.
@@ -99,16 +117,16 @@ $$
 
 The precision of the KV cache significantly impacts memory usage. Supported quantization formats:
 
-| Format | Precision | Bytes per Value ($b_{\text{KV}}$) |
-|--------|-----------|-------------------------------------|
-| **FP32** | 32-bit floating point | 8.0 |
-| **FP16/BF16** | 16-bit floating point | 4.0 |
-| **INT8** | 8-bit integer | 2.0 |
-| **Q6** | 6-bit quantized | 1.5 |
-| **Q5** | 5-bit quantized | 1.25 |
-| **Q4** | 4-bit quantized | 1.0 |
+| Format | Precision | Bytes per Value | Bytes per KV-pair ($b_{\text{KV}}$) |
+|--------|-----------|-----------------|-------------------------------------|
+| **FP32** | 32-bit floating point | 4.0 | 8.0 |
+| **FP16/BF16** | 16-bit floating point | 2.0 | 4.0 |
+| **INT8** | 8-bit integer | 1.0 | 2.0 |
+| **Q6** | 6-bit quantized | 0.75 | 1.5 |
+| **Q5** | 5-bit quantized | 0.625 | 1.25 |
+| **Q4** | 4-bit quantized | 0.5 | 1.0 |
 
-**Note:** The factor of 2 (accounting for separate Key and Value storage) effectively doubles these values in the final calculation.
+**Note:** "Bytes per Value" is storage for a single scalar in one tensor (K or V). "Bytes per KV-pair" is the combined storage (K+V) at one position. The implementation uses Bytes per KV-pair directly, absorbing the factor of 2 from the formula.
 
 ---
 
@@ -136,18 +154,29 @@ The calculator extracts the following parameters from GGUF file metadata:
 - Context size: $C = 8{,}192$ tokens
 - Hidden layers: $n_{\text{layers}} = 32$
 - Hidden size: $d_{\text{model}} = 4{,}096$
-- KV cache quantization: FP16 ($b_{\text{KV}} = 4.0$ bytes/value)
+- KV cache quantization: FP16 ($b_{\text{KV}} = 4.0$ bytes per KV-pair)
+- Parameter count: $P = 13$ billion
 
 ### KV Cache Calculation:
 
 $$
 \begin{align*}
-M_{\text{KV}} &= 2 \times b_{\text{KV}} \times d_{\text{model}} \times n_{\text{layers}} \times C \\
-&= 2 \times 4.0 \times 4{,}096 \times 32 \times 8{,}192 \\
-&= 8.0 \times 4{,}096 \times 32 \times 8{,}192 \\
-&= 8{,}589{,}934{,}592 \text{ bytes} \\
-&= 8{,}589.93 \text{ MB} \\
-&\approx 8.59 \text{ GB}
+M_{\text{KV}} &= b_{\text{KV}} \times d_{\text{model}} \times n_{\text{layers}} \times C \\
+&= 4.0 \times 4{,}096 \times 32 \times 8{,}192 \\
+&= 4{,}294{,}967{,}296 \text{ bytes} \\
+&= 4{,}294.97 \text{ MB} \\
+&\approx 4.29 \text{ GB}
+\end{align*}
+$$
+
+### Overhead Calculation:
+
+$$
+\begin{align*}
+M_{\text{overhead}} &= \alpha \cdot P + \beta \\
+&= 0.02 \times 13 + 0.15 \\
+&= 0.41 \text{ GB} \\
+&= 410 \text{ MB}
 \end{align*}
 $$
 
@@ -155,14 +184,14 @@ $$
 
 $$
 \begin{align*}
-M_{\text{total}} &= M_{\text{model}} + M_{\text{KV}} \\
-&= 15{,}000 \text{ MB} + 8{,}589.93 \text{ MB} \\
-&= 23{,}589.93 \text{ MB} \\
-&\approx 23.59 \text{ GB}
+M_{\text{total}} &= M_{\text{model}} + M_{\text{KV}} + M_{\text{overhead}} \\
+&= 15{,}000 \text{ MB} + 4{,}294.97 \text{ MB} + 410 \text{ MB} \\
+&= 19{,}704.97 \text{ MB} \\
+&\approx 19.70 \text{ GB}
 \end{align*}
 $$
 
-**Result:** The model requires approximately **23.6 GB** of memory for inference at 8K context.
+**Result:** The model requires approximately **19.7 GB** of memory for inference at 8K context.
 
 ---
 

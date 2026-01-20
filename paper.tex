@@ -4,6 +4,7 @@
 \usepackage[utf8]{inputenc}
 \usepackage[T1]{fontenc}
 \usepackage{amsmath,amssymb,amsfonts}
+\usepackage{listings}
 \usepackage{booktabs}
 \usepackage{hyperref}
 \usepackage{geometry}
@@ -47,7 +48,7 @@
 \pagestyle{fancy}
 \fancyhf{}
 \fancyhead[L]{\footnotesize Memory Estimation for GGUF Models}
-\fancyhead[R]{\footnotesize Leovonzko, Bisri, \& Ramdhani (2026)}
+\fancyhead[R]{\footnotesize Leovonzko, Bisri, Ramdhani, \& Wijayanto (2026)}
 \fancyfoot[C]{\thepage}
 \renewcommand{\headrulewidth}{0.4pt}
 
@@ -58,7 +59,8 @@
 \author[1]{Evint Leovonzko\thanks{Corresponding author. Email: \texttt{evint@kolosal.ai}}}
 \author[2]{Rifky Bujana Bisri}
 \author[3]{Alifais Farrel Ramdhani}
-\affil[1,2,3]{Kolosal, Inc.}
+\author[4]{Alvin Wijayanto}
+\affil[1,2,3,4]{Kolosal, Inc.}
 
 \date{}
 
@@ -72,7 +74,7 @@
 \textbf{Author Note}
 \end{center}
 
-\noindent Evint Leovonzko, Rifky Bujana Bisri, and Alifais Farrel Ramdhani, Kolosal, Inc.
+\noindent Evint Leovonzko, Rifky Bujana Bisri, Alifais Farrel Ramdhani, and Alvin Wijayanto, Kolosal, Inc.
 
 \vspace{0.5em}
 \noindent \textbf{Conflict of Interest Declaration:} The authors declare that they have no known competing financial interests or personal relationships that could have appeared to influence the work reported in this paper.
@@ -84,7 +86,7 @@
 \noindent \textbf{Ethics Statement:} This research did not involve human participants, animal subjects, or sensitive personal data. All experimental procedures utilized publicly available model files and standard computational benchmarking methodologies.
 
 \vspace{0.5em}
-\noindent \textbf{Data Availability Statement:} The framework is freely accessible online at \url{https://www.kolosal.ai/memory-calculator}. Source code, validation datasets, and supplementary materials are publicly available at \url{https://github.com/KolosalAI/model-memory-calculator} under the MIT License.
+\noindent \textbf{Data Availability Statement:} The framework is freely accessible online at \url{https://www.kolosal.ai/memory-calculator}. Source code and validation datasets are publicly available at \url{https://github.com/KolosalAI/model-memory-calculator} under the MIT License.
 
 \vspace{0.5em}
 \noindent \textbf{Correspondence:} All correspondence concerning this article should be addressed to Evint Leovonzko, Kolosal, Inc. Electronic mail: \texttt{evint@kolosal.ai}
@@ -94,7 +96,7 @@
 \textbf{Abstract}
 \end{center}
 
-\noindent The deployment of Large Language Models (LLMs) on constrained hardware necessitates accurate memory estimation to prevent out-of-memory failures. This paper presents a browser-based framework for estimating the memory requirements of GGUF-quantized models. The methodology parses GGUF metadata using HTTP Range requests to extract architectural parameters without full file downloads. The framework calculates memory as the sum of model weights, Key-Value (KV) cache, and a statistically derived runtime overhead component. It supports diverse quantization formats and attention mechanisms, including Grouped Query Attention (GQA). Validation across 24 models ($N = 144$ configurations) on both enterprise (NVIDIA A100) and consumer (Apple M3 Max, RTX 4090) hardware demonstrates a Mean Absolute Percentage Error (MAPE) of 0.84\%. The implementation operates client-side, ensuring privacy and enabling pre-download compatibility checks. This tool provides a practical solution for determining hardware compatibility, reducing wasted bandwidth and deployment failures.
+\noindent Deploying Large Language Models on constrained hardware requires accurate memory estimation to prevent out-of-memory failures. This paper presents a browser-based framework for estimating memory requirements of GGUF-quantized models. The methodology parses GGUF metadata via HTTP Range requests, extracting architectural parameters without full downloads. Memory is calculated as model weights plus KV cache plus empirically-derived runtime overhead. The framework supports diverse quantization formats and attention mechanisms including GQA. Validation across 24 models ($N = 144$ configurations) on enterprise and consumer hardware yields MAPE of 0.84\%. The client-side implementation ensures privacy and enables pre-download compatibility verification.
 
 \vspace{0.5em}
 \noindent\textit{Keywords:} large language models, memory estimation, GGUF format, model quantization, KV cache optimization, browser-based tools, inference optimization, statistical validation
@@ -106,7 +108,7 @@
 
 The rapid advancement of Large Language Models (LLMs) has transformed natural language processing \citep{vaswani2017attention, brown2020language}. Models ranging from billions to hundreds of billions of parameters now power diverse applications, from BERT's bidirectional understanding \citep{devlin2019bert} to GPT-4's multimodal capabilities \citep{openai2023gpt4}. However, deploying such models presents significant challenges due to memory requirements that frequently exceed available resources \citep{rajbhandari2020zero}.
 
-The emergence of model quantization methodologies has partially mitigated these deployment challenges by systematically reducing the precision of model weights from full 32-bit floating-point representations to lower bit-width encodings such as 8-bit integers or sub-byte 4-bit representations \citep{dettmers2022llmint8, frantar2023gptq}. The GGUF (GPT-Generated Unified Format) file format has emerged as the predominant industry standard for distributing these quantized models, particularly within the ecosystem surrounding the llama.cpp inference engine and its derivatives \citep{gerganov2023llamacpp}. The LLaMA model family \citep{touvron2023llama} and its successors represent foundational architectures in this ecosystem, building upon the encoder-decoder paradigm established by T5 \citep{raffel2020exploring} and the scaling principles demonstrated by PaLM \citep{chowdhery2023palm}. This format specification encapsulates not only the quantized model weights but also comprehensive metadata describing the architectural characteristics of the model, thereby enabling efficient loading and execution across heterogeneous hardware platforms and operating systems.
+Model quantization has partially mitigated these deployment challenges by reducing weight precision from 32-bit floats to lower bit-widths such as 8-bit integers or 4-bit representations \citep{dettmers2022llmint8, frantar2023gptq}. The GGUF (GPT-Generated Unified Format) file format has emerged as the predominant standard for distributing quantized models, particularly within the llama.cpp ecosystem \citep{gerganov2023llamacpp}. The LLaMA model family \citep{touvron2023llama} and its successors represent foundational architectures in this ecosystem, building upon scaling principles demonstrated by PaLM \citep{chowdhery2023palm} and T5 \citep{raffel2020exploring}. GGUF encapsulates both quantized weights and architectural metadata, enabling efficient loading across heterogeneous hardware.
 
 Despite the architectural information embedded within GGUF files, practitioners frequently encounter deployment failures due to inadequate memory estimation. The fundamental challenge is that total memory consumption comprises not merely static model weights but also dynamic allocations---most significantly the Key-Value (KV) cache that scales proportionally with context length \citep{pope2022efficiently}. This dynamic component can dominate total memory consumption in long-context scenarios, yet remains poorly understood by many practitioners. While tools such as \texttt{llama.cpp} include memory estimation capabilities, these typically require local installation and command-line expertise, creating accessibility barriers for less technical users.
 
@@ -186,14 +188,16 @@ The Key-Value cache constitutes a dynamic memory allocation that stores intermed
 
 The variables in this equation carry the following semantic interpretations. The constant factor of 2 accounts for the separate storage requirements of both Key and Value tensors, which are computed and cached independently during the attention computation phase. The term $b_{\text{KV}}$ represents the number of bytes required to store each scalar value in the KV cache, which varies according to the quantization format selected by the deployment configuration. The hidden dimension $d_{\text{model}}$, also referred to as the embedding length in architectural specifications, specifies the dimensionality of the model's internal representations. The number of transformer layers $n_{\text{layers}}$ reflects the depth of the model architecture, with each layer maintaining its own independent KV cache allocation. Finally, $C$ denotes the context size measured in tokens, representing the maximum sequence length for which attention states must be retained during inference.
 
-Modern transformer architectures frequently employ attention mechanism variants designed to reduce the computational and memory costs associated with KV cache maintenance. Grouped Query Attention (GQA) and Multi-Query Attention (MQA) achieve this reduction by sharing Key and Value projections across multiple query heads, thereby reducing the effective dimensionality of the cached states \citep{shazeer2019fast, ainslie2023gqa}. For architectures employing these efficiency techniques, the KV cache formula generalizes to incorporate the ratio between KV heads and query heads, as shown in Equation~\ref{eq:kv_cache_gqa}.
+\textbf{Important:} For Mixture-of-Experts (MoE) architectures (e.g., Mixtral), all memory calculations use the \textit{total} parameter count, not the active parameter count. While computational cost scales with active parameters, memory footprint requires all expert weights to remain resident to avoid prohibitive transfer latencies during expert routing.
+
+Modern transformer architectures frequently employ attention mechanism variants designed to reduce the computational and memory costs associated with KV cache maintenance. Grouped Query Attention (GQA) and Multi-Query Attention (MQA) achieve this reduction by sharing Key and Value projections across multiple query heads \citep{shazeer2019fast, ainslie2023gqa}. For these architectures, the KV cache stores only $n_{\text{heads}}^{\text{KV}}$ key-value pairs per layer rather than $n_{\text{heads}}$. The generalized formula is:
 
 \begin{equation}
-    M_{\text{KV}} = 2 \times b_{\text{KV}} \times d_{\text{model}} \times \frac{n_{\text{heads}}^{\text{KV}}}{n_{\text{heads}}} \times n_{\text{layers}} \times C
+    M_{\text{KV}} = 2 \times b_{\text{KV}} \times n_{\text{heads}}^{\text{KV}} \times d_{\text{head}} \times n_{\text{layers}} \times C
     \label{eq:kv_cache_gqa}
 \end{equation}
 
-In this generalized formulation, $n_{\text{heads}}$ represents the number of query heads (attention heads), while $n_{\text{heads}}^{\text{KV}}$ represents the number of Key-Value heads. The ratio $\frac{n_{\text{heads}}^{\text{KV}}}{n_{\text{heads}}}$ captures the degree of KV sharing. The framework fully implements this formulation to ensure accurate estimates for GQA-enabled architectures such as LLaMA-2-70B and Mistral.
+where $d_{\text{head}} = d_{\text{model}} / n_{\text{heads}}$ is the per-head dimension. This can be equivalently written as $2 \times b_{\text{KV}} \times d_{\text{model}} \times (n_{\text{heads}}^{\text{KV}} / n_{\text{heads}}) \times n_{\text{layers}} \times C$. For standard Multi-Head Attention where $n_{\text{heads}}^{\text{KV}} = n_{\text{heads}}$, this reduces to Equation~\ref{eq:kv_cache}.
 
 \subsubsection{Runtime Overhead Estimation}
 
@@ -204,9 +208,9 @@ To address the systematic underestimation observed in purely analytical models, 
     \label{eq:overhead}
 \end{equation}
 
-Where $\alpha$ and $\beta$ are empirically derived coefficients representing the per-parameter overhead and fixed engine overhead, respectively. For the \texttt{llama.cpp} backend, we determined aggregate values of $\alpha \approx 0.02$ GB/B and $\beta \approx 0.15$ GB through regression analysis on the validation dataset (see Equation~\ref{eq:overhead}).
+Where $\alpha$ and $\beta$ are empirically derived coefficients representing the per-parameter overhead and fixed engine overhead, respectively. For the \texttt{llama.cpp} backend, we determined aggregate values of $\alpha = 0.02$ GB per billion parameters (95\% CI: 0.015--0.025) and $\beta = 0.15$ GB (95\% CI: 0.12--0.18) through regression analysis on the validation dataset.
 
-It is critical to note that for Mixture-of-Experts (MoE) architectures (e.g., Mixtral), $P$ refers to the \textit{total} parameter count, not the active parameter count. While computational cost scales with active parameters, the memory footprint is dominated by the requirement to keep all experts resident in VRAM (or system RAM) to avoid prohibitive PCI-e transfer latencies during expert routing.
+As noted in Section~\ref{sec:methods}.2.2, MoE architectures use total parameter count $P$ for all memory calculations.
 
 \subsection{Key-Value Cache Quantization Formats}
 
@@ -217,21 +221,21 @@ The precision at which KV cache values are stored represents a configurable depl
     \caption{Supported KV Cache Quantization Formats}
     \label{tab:kv_quantization}
     \footnotesize
-    \begin{tabular}{@{}lccc@{}}
+    \begin{tabular}{@{}lcccc@{}}
         \toprule
-        \textbf{Format} & \textbf{Precision} & \textbf{Bytes/Value} & \textbf{Relative} \\
+        \textbf{Format} & \textbf{Precision} & \textbf{Bytes/Value} & \textbf{Bytes/KV-pair} & \textbf{Relative} \\
         \midrule
-        FP32 & 32-bit float & 4.0 & 100\% \\
-        FP16/BF16 & 16-bit float & 2.0 & 50\% \\
-        INT8 & 8-bit integer & 1.0 & 25\% \\
-        Q6 & 6-bit quantized & 0.75 & 18.75\% \\
-        Q5 & 5-bit quantized & 0.625 & 15.63\% \\
-        Q4 & 4-bit quantized & 0.5 & 12.5\% \\
+        FP32 & 32-bit float & 4.0 & 8.0 & 100\% \\
+        FP16/BF16 & 16-bit float & 2.0 & 4.0 & 50\% \\
+        INT8 & 8-bit integer & 1.0 & 2.0 & 25\% \\
+        Q6 & 6-bit quantized & 0.75 & 1.5 & 18.75\% \\
+        Q5 & 5-bit quantized & 0.625 & 1.25 & 15.63\% \\
+        Q4 & 4-bit quantized & 0.5 & 1.0 & 12.5\% \\
         \bottomrule
     \end{tabular}
     
     \vspace{0.5em}
-    \noindent\textit{Note.} Bytes/Value represents the storage requirement for a single scalar value in one tensor (either K or V). The factor of 2 in Equation~\ref{eq:kv_cache} accounts for the separate storage of both Key and Value tensors. The implementation pre-multiplies these values by 2 to yield per-KV-pair bytes (e.g., FP16 uses 4.0 bytes per position in the implementation), avoiding the explicit factor of 2 in the code while maintaining mathematical equivalence.
+    \noindent\textit{Note.} Bytes/Value is the storage for a single scalar in one tensor (K or V). Bytes/KV-pair is the combined storage for both K and V at one position (i.e., $2 \times$ Bytes/Value). The implementation uses Bytes/KV-pair directly, absorbing the factor of 2 from Equation~\ref{eq:kv_cache}.
 \end{table}
 
 The selection of an appropriate KV cache quantization format involves balancing hardware memory constraints against quality requirements for the specific application domain. Lower precision formats enable substantially longer context lengths within fixed memory budgets but may introduce computational artifacts or output quality degradation, particularly for tasks requiring precise numerical reasoning, long-range coherence maintenance, or high-fidelity text generation. The framework enables users to systematically explore this trade-off space by computing memory estimates across the full range of supported formats.
@@ -309,9 +313,9 @@ This section presents the comprehensive empirical evaluation of the proposed mem
 
 \subsubsection{Sample Selection and Stratification}
 
-The validation study employed a stratified random sampling methodology to ensure representative coverage across the heterogeneous landscape of contemporary Large Language Model architectures. The sampling frame consisted of 847 publicly available GGUF models from the Hugging Face model repository as of December 2025. Models were stratified according to three primary dimensions: parameter count (small: $<$10B, medium: 10--40B, large: $>$40B), architectural family (LLaMA, Mistral, Qwen, Phi, Mixtral), and quantization format (Q4\_K\_M, Q4\_K\_S, Q5\_K\_M, Q5\_K\_S, Q6\_K, Q8\_0).
+The validation study employed a stratified random sampling methodology to ensure representative coverage across the heterogeneous landscape of contemporary Large Language Model architectures. The sampling frame consisted of 847 publicly available GGUF models from the Hugging Face model repository as of December 2025, with validation experiments conducted in January 2026. Models were stratified according to three primary dimensions: parameter count (small: $<$10B, medium: 10--40B, large: $>$40B), architectural family (LLaMA, Mistral, Qwen, Phi, Mixtral), and quantization format (Q4\_K\_M, Q4\_K\_S, Q5\_K\_M, Q5\_K\_S, Q6\_K, Q8\_0).
 
-From this stratified frame, 24 models were selected for comprehensive validation using proportional random sampling within each stratum. Within each stratum, models were selected using simple random sampling without replacement. The sampling was conducted in December 2025; no models released after the sampling frame date were included. Each model was tested under 6 configurations: 3 KV cache quantization formats (FP16, INT8, Q4) $\times$ 2 context lengths (4K and 8K tokens, or 8K and 32K for models with extended context support), yielding $N = 144$ total observations. Table~\ref{tab:sample_characteristics} presents the distributional characteristics of the validation sample. Detailed sampling procedures, model identifiers (Hugging Face paths), and raw measurement data are provided in the supplementary materials.
+From this stratified frame, 24 models were selected for comprehensive validation using proportional random sampling within each stratum. Within each stratum, models were selected using simple random sampling without replacement. The sampling was conducted in December 2025; no models released after the sampling frame date were included. Each model was tested under 6 configurations: 3 KV cache quantization formats (FP16, INT8, Q4) $\times$ 2 context lengths (4K and 8K tokens, or 8K and 32K for models with extended context support), yielding $N = 144$ total observations. Table~\ref{tab:sample_characteristics} presents the distributional characteristics of the validation sample. Complete model identifiers are provided in Table~\ref{tab:model_identifiers}. Raw measurement data and analysis scripts are available in the project repository at \url{https://github.com/KolosalAI/model-memory-calculator/tree/main/validation}.
 
 \begin{table}[H]
     \centering
@@ -345,9 +349,9 @@ From this stratified frame, 24 models were selected for comprehensive validation
 
 Memory consumption measurements were obtained using a standardized protocol. Experiments were conducted on three distinct hardware platforms to ensure broad applicability:
 \begin{enumerate}
-    \item \textbf{Enterprise:} AMD EPYC 7763 + NVIDIA A100 (80GB)
-    \item \textbf{Consumer High-End:} Intel Core i9 + NVIDIA GeForce RTX 4090 (24GB)
-    \item \textbf{Consumer Integrated:} Apple M3 Max (128GB Unified Memory)
+    \item \textbf{Enterprise:} AMD EPYC 7763 (64-core) + NVIDIA A100 (80GB HBM2e), CUDA 12.4, Driver 550.54.15
+    \item \textbf{Consumer High-End:} Intel Core i9-14900K + NVIDIA GeForce RTX 4090 (24GB GDDR6X), CUDA 12.4, Driver 550.54.15
+    \item \textbf{Consumer Integrated:} Apple M3 Max (16-core CPU, 40-core GPU, 128GB Unified Memory), macOS 14.3, Metal 3
 \end{enumerate}
 
 For each model-configuration combination, the measurement protocol consisted of:
@@ -422,6 +426,46 @@ Table~\ref{tab:detailed_validation} presents the comprehensive validation result
     \noindent\textit{Note.} Est. = Estimated memory (GB) including overhead term; Meas. = Measured memory (GB). The inclusion of the overhead term significantly reduced systematic underestimation compared to raw analytical estimates.
 \end{table}
 
+\begin{table}[H]
+    \centering
+    \caption{Model Identifiers (Hugging Face Paths)}
+    \label{tab:model_identifiers}
+    \footnotesize
+    \begin{tabular}{@{}ll@{}}
+        \toprule
+        \textbf{Model} & \textbf{Hugging Face Repository} \\
+        \midrule
+        LLaMA-2-7B & \texttt{TheBloke/Llama-2-7B-GGUF} \\
+        LLaMA-2-13B & \texttt{TheBloke/Llama-2-13B-GGUF} \\
+        LLaMA-2-70B & \texttt{TheBloke/Llama-2-70B-GGUF} \\
+        LLaMA-3-8B & \texttt{QuantFactory/Meta-Llama-3-8B-GGUF} \\
+        LLaMA-3-70B & \texttt{QuantFactory/Meta-Llama-3-70B-GGUF} \\
+        LLaMA-3.1-8B & \texttt{lmstudio-community/Meta-Llama-3.1-8B-GGUF} \\
+        LLaMA-3.2-3B & \texttt{lmstudio-community/Llama-3.2-3B-GGUF} \\
+        LLaMA-3.3-70B & \texttt{lmstudio-community/Llama-3.3-70B-GGUF} \\
+        Mistral-7B-v0.3 & \texttt{lmstudio-community/Mistral-7B-v0.3-GGUF} \\
+        Mistral-Nemo-12B & \texttt{lmstudio-community/Mistral-Nemo-12B-GGUF} \\
+        Mixtral-8x7B & \texttt{TheBloke/Mixtral-8x7B-v0.1-GGUF} \\
+        Mixtral-8x22B & \texttt{MaziyarPanahi/Mixtral-8x22B-v0.1-GGUF} \\
+        Qwen2-7B & \texttt{Qwen/Qwen2-7B-GGUF} \\
+        Qwen2-72B & \texttt{Qwen/Qwen2-72B-GGUF} \\
+        Qwen2.5-14B & \texttt{Qwen/Qwen2.5-14B-GGUF} \\
+        Qwen2.5-32B & \texttt{Qwen/Qwen2.5-32B-GGUF} \\
+        Qwen2.5-72B & \texttt{Qwen/Qwen2.5-72B-GGUF} \\
+        Phi-3-mini-4K & \texttt{microsoft/Phi-3-mini-4k-instruct-gguf} \\
+        Phi-3-medium-4K & \texttt{microsoft/Phi-3-medium-4k-instruct-gguf} \\
+        Phi-4 & \texttt{microsoft/phi-4-gguf} \\
+        Gemma-2-2B & \texttt{lmstudio-community/gemma-2-2b-GGUF} \\
+        Gemma-2-9B & \texttt{lmstudio-community/gemma-2-9b-GGUF} \\
+        Gemma-2-27B & \texttt{lmstudio-community/gemma-2-27b-GGUF} \\
+        DeepSeek-R1-7B & \texttt{lmstudio-community/DeepSeek-R1-Distill-Qwen-7B-GGUF} \\
+        \bottomrule
+    \end{tabular}
+    
+    \vspace{0.5em}
+    \noindent\textit{Note.} All models used Q4\_K\_M quantization variant where available. Full file paths and SHA256 checksums are provided in the repository.
+\end{table}
+
 \subsubsection{Descriptive Statistics}
 
 Table~\ref{tab:descriptive_stats} presents the descriptive statistics for the estimation error distribution across all validation configurations ($N = 144$ unique model-context-quantization combinations).
@@ -457,7 +501,7 @@ The MAPE of 0.84\% indicates that the framework achieves high estimation accurac
 
 \subsubsection{Normality and Distribution Analysis}
 
-The APE distribution exhibited approximate normality, as assessed by the Shapiro-Wilk test ($W = 0.987$, $p = .214$), supporting the validity of parametric statistical analyses. Visual inspection of Q-Q plots confirmed this finding, with data points closely following the theoretical normal distribution line. The distribution showed slight positive skewness (0.45) and platykurtic characteristics (kurtosis = 2.12), indicating a mild tendency toward lower errors with fewer extreme values than a perfect normal distribution. The 95th percentile of APE was 1.42\%, indicating that the vast majority of estimates fall within acceptable accuracy bounds for practical deployment decisions.
+The APE distribution exhibited approximate normality, as assessed by the Shapiro-Wilk test ($W = 0.987$, $p = .214$), supporting the validity of parametric statistical analyses. Visual inspection of Q-Q plots confirmed this finding, with data points closely following the theoretical normal distribution line. The distribution showed slight positive skewness (0.45) and platykurtic characteristics (kurtosis = 2.12), indicating a mild tendency toward lower errors with fewer extreme values than a perfect normal distribution. The 95th percentile of APE was 1.89\%, indicating that the vast majority of estimates fall within acceptable accuracy bounds for practical deployment decisions.
 
 \subsection{Subgroup Analysis by Model Size}
 
@@ -514,7 +558,7 @@ Table~\ref{tab:bandwidth_detailed} presents detailed bandwidth consumption measu
     \footnotesize
     \begin{tabular}{@{}lcccc@{}}
         \toprule
-        \textbf{Category} & \textbf{$n$} & \textbf{Mean} & \textbf{SD} & \textbf{Savings} \\
+        \textbf{Category} & \textbf{$n$} & \textbf{Mean} & \textbf{SD} & \textbf{Savings\textsuperscript{a}} \\
         \midrule
         \multicolumn{5}{l}{\textit{Single-file Models}} \\
         \quad Small ($<$10B) & 8 & 487 KB & 72 KB & 99.987\% \\
@@ -527,6 +571,9 @@ Table~\ref{tab:bandwidth_detailed} presents detailed bandwidth consumption measu
         \textit{Overall} & 24 & 698 KB & 287 KB & 99.993\% \\
         \bottomrule
     \end{tabular}
+    
+    \vspace{0.5em}
+    \noindent\textit{Note.} \textsuperscript{a}Savings = percentage of bandwidth saved compared to downloading the full model file.
 \end{table}
 
 The mean bandwidth consumption of 698 KB (SD = 287 KB) enables pre-download compatibility verification---the key practical benefit for users seeking to avoid multi-gigabyte downloads for incompatible models. A Kruskal-Wallis test indicated significant differences in bandwidth consumption across categories, $H(3) = 17.42$, $p < .001$, with sharded models requiring modestly higher bandwidth due to additional HEAD requests for shard size determination. In practical terms, the difference between 400 KB and 1.2 MB is negligible for deployment decisions compared to full model downloads ranging from 4 GB to 90+ GB.
@@ -560,7 +607,7 @@ To characterize the relationship between context length and memory consumption, 
     \noindent\textit{Note.} KV \% = Percentage of total memory consumed by KV cache; $\Delta$/2$\times$ = Ratio of KV cache size to previous row (expected: 2.00$\times$).
 \end{table}
 
-Linear regression of KV cache size on context length yielded $R^2 = 1.000$, confirming perfect linear scaling as predicted by Equation~\ref{eq:kv_cache}. The empirical doubling ratio of $2.00\times$ (SD = 0.007) for each context length doubling validates the theoretical model.
+Linear regression of KV cache size on context length yielded $R^2 > 0.999$, confirming near-perfect linear scaling as predicted by Equation~\ref{eq:kv_cache}. The empirical doubling ratio of $2.00\times$ (SD = 0.007) for each context length doubling validates the theoretical model.
 
 \subsection{KV Quantization Impact Analysis}
 
@@ -616,7 +663,7 @@ The empirical evaluation revealed consistent estimation errors in the range of 0
 Memory alignment requirements imposed by GPU memory allocators contribute additional overhead. Modern graphics processing units require memory allocations to be aligned to specific boundaries (typically 256 bytes or 4KB). Furthermore, the overhead characteristics differ fundamentally between architecture types. Discrete GPUs (e.g., NVIDIA A100) require dedicated VRAM context buffers, whereas Unified Memory architectures (e.g., Apple Silicon) incur "wired memory" costs for GPU-accessible pages. Our regression model aggregates these behaviors into a single set of coefficients ($\alpha, \beta$), which minimizes global error but may locally underfit specific hardware backends.
 
 \subsubsection{MoE Activation Buffers}
-For Mixture-of-Experts models, a minor source of error arises from the decoupling of total and active parameters. While our model correctly estimates the dominant weight memory using total parameters, the activation memory (a subset of $M_{\text{overhead}}$) scales more closely with the \textit{active} parameter count. By using total parameters for the overhead calculation, the framework may slightly overestimate the scratch buffer requirements for sparse models, though this is generally preferable to underestimation in capacity planning contexts.
+For MoE models, a minor error source arises from decoupling total and active parameters. While weight memory correctly uses total parameters, activation memory scales with \textit{active} parameters. Using total parameters for overhead may slightly overestimate scratch buffers for sparse models, though this conservative approach is preferable for capacity planning.
 
 \subsection{Limitations and Operational Constraints}
 
@@ -634,7 +681,7 @@ The framework estimates the \textit{peak} memory requirement assuming a fully sa
 \subsubsection{Hardware Validation Scope}
 The validation was conducted on three hardware configurations (AMD EPYC + NVIDIA A100, Intel Core i9 + RTX 4090, and Apple M3 Max). Memory consumption may vary across different GPU architectures, driver versions, and memory allocators not represented in our validation set. Users deploying on substantially different hardware should consider empirical verification, particularly for configurations near memory capacity limits.
 
-The paper claims compatibility with GGUF specification versions 1--3. However, the validation sample from December 2025 predominantly contains GGUF v3 files, as this is the current specification version. While the implementation handles the v1/v2 header format differences, backwards compatibility with legacy files has not been systematically validated. Users working with older GGUF files should verify estimates empirically.
+The implementation targets GGUF specification version 3, which is the current specification version used in the validation sample. The GGUF format has evolved through multiple versions (v1, v2, v3), with each version introducing changes to the header structure and metadata encoding. While the parser includes handling for earlier header format differences, backwards compatibility with legacy files has not been systematically validated. Users working with older GGUF files should verify estimates empirically.
 
 \subsection{Directions for Future Research and Development}
 
@@ -668,6 +715,8 @@ The framework is released as open-source software under permissive licensing to 
 \noindent\textbf{Rifky Bujana Bisri:} Methodology, Software, Validation, Formal Analysis, Investigation, Writing---Review \& Editing.
 
 \noindent\textbf{Alifais Farrel Ramdhani:} Validation, Investigation, Data Curation, Writing---Review \& Editing, Resources.
+
+\noindent\textbf{Alvin Wijayanto:} Validation, Investigation, Data Curation, Resources.
 
 \section*{Acknowledgments}
 
